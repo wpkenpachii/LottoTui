@@ -39,12 +39,8 @@ export function calculateStatistics(draws: Draw[], mode: GameMode): Statistics {
     stats.sums.push(sorted.reduce((a, b) => a + b, 0));
 
     // Quadrants
-    const qCount = [0, 0, 0, 0];
-    const midVal = rules.maxNumber / 2;
-    // Simple 4-way split logic
-    // Q1: 1-midVal/2 (left), Q2: midVal/2-midVal (right), Q3: mid-75%, Q4: 75%-max
-    // For TUI consistency, we'll do a 2x2 grid logic if possible, or simple quarters
     const qSize = rules.maxNumber / 4;
+    const qCount = [0, 0, 0, 0];
     sorted.forEach(n => {
       if (n <= qSize) qCount[0]++;
       else if (n <= qSize * 2) qCount[1]++;
@@ -77,7 +73,7 @@ export function generateGames(
   const games: number[][] = [];
   const rules = GAME_RULES[mode];
   let attempts = 0;
-  const maxAttempts = 50000;
+  const maxAttempts = 100000; // Increased attempts for stricter filters
 
   while (games.length < count && attempts < maxAttempts) {
     attempts++;
@@ -88,7 +84,7 @@ export function generateGames(
     }
     const game = Array.from(current).sort((a, b) => a - b);
 
-    // Apply Strategies as filters
+    // Apply Strategies
     let isValid = true;
     for (const strat of strategies) {
       if (!isValidStrategy(game, strat, stats)) {
@@ -118,14 +114,19 @@ export function generateGames(
 function isValidStrategy(game: number[], strat: StrategyConfig, stats: Statistics): boolean {
   switch (strat.type) {
     case StrategyType.LATENESS:
-      const { min, max } = strat.params;
-      return game.every(n => stats.lateness[n] >= min && stats.lateness[n] <= max);
+      // Updated logic: Check if game has exactly X numbers with delay >= minDelay
+      const { minDelay, count } = strat.params;
+      const lateNumbersInGame = game.filter(n => stats.lateness[n] >= minDelay).length;
+      return lateNumbersInGame === count;
+      
     case StrategyType.EVEN_ODD:
       const even = game.filter(n => n % 2 === 0).length;
       return even === strat.params.even && (game.length - even) === strat.params.odd;
+      
     case StrategyType.PRIMES:
       const pCount = game.filter(n => PRIMES.includes(n)).length;
       return pCount >= strat.params.min && pCount <= strat.params.max;
+      
     case StrategyType.MULTIPLES:
       for (const mStr in strat.params) {
           const m = parseInt(mStr);
@@ -133,6 +134,7 @@ function isValidStrategy(game: number[], strat: StrategyConfig, stats: Statistic
           if (count !== strat.params[m]) return false;
       }
       return true;
+      
     default:
       return true;
   }
@@ -153,7 +155,11 @@ function isValidFilter(game: number[], filter: FilterConfig, mode: GameMode): bo
         else if (n <= qSize * 3) qCount[2]++;
         else qCount[3]++;
       });
-      return qCount.every((c, i) => c >= filter.params[`q${i+1}Min`] && c <= filter.params[`q${i+1}Max`]);
+      return qCount.every((c, i) => {
+        const min = filter.params[`q${i+1}Min`];
+        const max = filter.params[`q${i+1}Max`];
+        return (isNaN(min) || c >= min) && (isNaN(max) || c <= max);
+      });
     default:
       return true;
   }

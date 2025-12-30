@@ -36,49 +36,31 @@ const App: React.FC = () => {
   };
 
   const generateReportPDF = async () => {
-    if (!stats) return;
+    if (!stats) {
+      alert("Erro: Estatísticas não encontradas.");
+      return;
+    }
     setIsGeneratingReport(true);
     
     try {
-      // Initialize PDF
+      // Use standard A4 dimensions for jsPDF
       const doc = new jsPDF('p', 'mm', 'a4');
       const pageWidth = doc.internal.pageSize.getWidth();
       const pageHeight = doc.internal.pageSize.getHeight();
       const margin = 15;
       const contentWidth = pageWidth - (margin * 2);
 
-      // Function to add a section as a new page
-      const addSectionToPdf = async (id: string, title: string, isFirst: boolean = false) => {
-        const element = document.getElementById(id);
-        if (!element) return;
+      // Section ID list defined in StatsView
+      const sectionIds = [
+        { id: 'even-odd-section', title: 'Pares vs Ímpares' },
+        { id: 'primes-section', title: 'Números Primos' },
+        { id: 'sums-line-section', title: 'Evolução das Somas' },
+        { id: 'lateness-section', title: 'Ranking de Atraso' },
+        { id: 'quadrants-section', title: 'Médias por Quadrante' },
+        { id: 'sums-stats-section', title: 'Resumo de Somatória' }
+      ];
 
-        if (!isFirst) doc.addPage();
-
-        // Style the page
-        doc.setFillColor(9, 9, 11); // Dark background
-        doc.rect(0, 0, pageWidth, pageHeight, 'F');
-        
-        doc.setTextColor(16, 185, 129); // Emerald text
-        doc.setFont('courier', 'bold');
-        doc.setFontSize(16);
-        doc.text(title.toUpperCase(), margin, 20);
-
-        // Capture element
-        const canvas = await html2canvas(element, {
-          backgroundColor: '#09090b',
-          scale: 2,
-          logging: false,
-          useCORS: true
-        });
-
-        const imgData = canvas.toDataURL('image/png');
-        const imgHeight = (canvas.height * contentWidth) / canvas.width;
-
-        // Ensure image fits or handle overflow (simple fit here)
-        doc.addImage(imgData, 'PNG', margin, 30, contentWidth, imgHeight);
-      };
-
-      // 1. Cover / General Stats
+      // 1. Cover Page
       doc.setFillColor(9, 9, 11);
       doc.rect(0, 0, pageWidth, pageHeight, 'F');
       doc.setTextColor(16, 185, 129);
@@ -91,46 +73,84 @@ const App: React.FC = () => {
       doc.text(`TOTAL DE SORTEIOS ANALISADOS: ${stats.count}`, margin, 85);
       doc.line(margin, 95, pageWidth - margin, 95);
 
-      // 2. Process Sections individually
-      await addSectionToPdf('even-odd-section', 'Gráfico: Pares vs Ímpares', false);
-      await addSectionToPdf('primes-section', 'Gráfico: Números Primos', false);
-      await addSectionToPdf('sums-line-section', 'Gráfico: Evolução das Somas', false);
-      await addSectionToPdf('lateness-section', 'Gráfico: Ranking de Atraso', false);
-      await addSectionToPdf('quadrants-section', 'Estatística: Médias por Quadrante', false);
-      await addSectionToPdf('sums-stats-section', 'Estatística: Resumo de Somatória', false);
-
-      // 3. AI Analysis Page
-      doc.addPage();
-      doc.setFillColor(9, 9, 11);
-      doc.rect(0, 0, pageWidth, pageHeight, 'F');
-      doc.setTextColor(16, 185, 129);
-      doc.setFontSize(18);
-      doc.text("ANÁLISE ESTRATÉGICA (IA GEMINI)", margin, 20);
-      
-      doc.setFont('courier', 'normal');
-      doc.setFontSize(10);
-      doc.setTextColor(200, 200, 200);
-      
-      const aiText = await generateAIAnalysis(stats, activeMode);
-      const splitText = doc.splitTextToSize(aiText, contentWidth);
-      
-      // Handle multi-page text for AI analysis if it's very long
-      let cursorY = 35;
-      for (const line of splitText) {
-        if (cursorY > pageHeight - 20) {
-          doc.addPage();
-          doc.setFillColor(9, 9, 11);
-          doc.rect(0, 0, pageWidth, pageHeight, 'F');
-          cursorY = 20;
+      // 2. Loop through sections
+      for (const section of sectionIds) {
+        const element = document.getElementById(section.id);
+        if (!element) {
+          console.warn(`Section ${section.id} not found in DOM`);
+          continue;
         }
-        doc.text(line, margin, cursorY);
-        cursorY += 5;
+
+        doc.addPage();
+        doc.setFillColor(9, 9, 11);
+        doc.rect(0, 0, pageWidth, pageHeight, 'F');
+        
+        doc.setTextColor(16, 185, 129);
+        doc.setFontSize(16);
+        doc.text(section.title.toUpperCase(), margin, 20);
+
+        try {
+          const canvas = await html2canvas(element, {
+            backgroundColor: '#09090b',
+            scale: 1.5, // Slightly lower scale for stability
+            useCORS: true,
+            allowTaint: true,
+            logging: false
+          });
+
+          const imgData = canvas.toDataURL('image/png');
+          const imgHeight = (canvas.height * contentWidth) / canvas.width;
+          
+          // Center vertically if it fits, else start at top
+          let startY = 30;
+          if (imgHeight < pageHeight - 60) {
+            startY = (pageHeight - imgHeight) / 2;
+          }
+
+          doc.addImage(imgData, 'PNG', margin, startY, contentWidth, imgHeight);
+        } catch (canvasErr) {
+          console.error(`Error capturing ${section.id}:`, canvasErr);
+          doc.setTextColor(255, 0, 0);
+          doc.text(`Erro ao capturar gráfico: ${section.title}`, margin, 40);
+        }
       }
 
-      doc.save(`relatorio_completo_${activeMode.toLowerCase()}.pdf`);
+      // 3. AI Analysis Page
+      try {
+        const aiText = await generateAIAnalysis(stats, activeMode);
+        
+        doc.addPage();
+        doc.setFillColor(9, 9, 11);
+        doc.rect(0, 0, pageWidth, pageHeight, 'F');
+        doc.setTextColor(16, 185, 129);
+        doc.setFontSize(18);
+        doc.text("ANÁLISE ESTRATÉGICA IA", margin, 20);
+        
+        doc.setFontSize(10);
+        doc.setTextColor(200, 200, 200);
+        const splitText = doc.splitTextToSize(aiText, contentWidth);
+        
+        let cursorY = 35;
+        for (const line of splitText) {
+          if (cursorY > pageHeight - margin) {
+            doc.addPage();
+            doc.setFillColor(9, 9, 11);
+            doc.rect(0, 0, pageWidth, pageHeight, 'F');
+            cursorY = margin;
+          }
+          doc.text(line, margin, cursorY);
+          cursorY += 5;
+        }
+      } catch (aiErr) {
+        console.error("AI Analysis PDF step failed:", aiErr);
+      }
+
+      // 4. Save
+      doc.save(`LottoTUI_Report_${activeMode}_${Date.now()}.pdf`);
+      
     } catch (e) {
-      console.error(e);
-      alert("Erro ao gerar PDF modular. Verifique o console.");
+      console.error("General PDF Error:", e);
+      alert("Houve um problema ao gerar o PDF. Verifique se os gráficos estão visíveis na tela.");
     } finally {
       setIsGeneratingReport(false);
     }
@@ -179,8 +199,8 @@ const App: React.FC = () => {
         </div>
 
         <div className="bg-zinc-950 px-4 py-2 border-t border-zinc-800 flex justify-between text-[10px] md:text-xs opacity-60">
-          <div>LOTTOTUI MOBILE-READY V1.1.0</div>
-          <div className="hidden md:block">ESTADO: OPERACIONAL _</div>
+          <div>LOTTOTUI PRO v1.1.2</div>
+          <div className="hidden md:block">STATUS: ONLINE _</div>
         </div>
       </div>
     </div>

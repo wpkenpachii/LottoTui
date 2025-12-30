@@ -34,12 +34,11 @@ const GeneratorFlow: React.FC<GeneratorFlowProps> = ({ onBack, db }) => {
   
   const [results, setResults] = useState<number[][]>([]);
 
-  // Jump to specific step from parameters
   const jumpToStep = (targetStep: 'config' | 'selection' | 'params', idx?: number) => {
     if (targetStep === 'params' && idx !== undefined) {
       setCurrentParamIdx(idx);
       setParamState({});
-      // Clear previous configs from that point onwards
+      const allItems = [...selectedStrats, ...selectedFilters];
       setStratConfigs(prev => prev.slice(0, idx));
       setFilterConfigs(prev => prev.slice(0, Math.max(0, idx - selectedStrats.length)));
     } else {
@@ -52,7 +51,6 @@ const GeneratorFlow: React.FC<GeneratorFlowProps> = ({ onBack, db }) => {
     }
   };
 
-  // Keyboard navigation for Selection step
   useEffect(() => {
     if (step !== 'selection') return;
 
@@ -71,7 +69,16 @@ const GeneratorFlow: React.FC<GeneratorFlowProps> = ({ onBack, db }) => {
         if (activePanel === 'left') {
           const item = list[listIdx];
           if (item === 'FINALIZAR') {
-            setStep('params');
+            if (selectedStrats.length === 0 && selectedFilters.length === 0) {
+              setStep('results');
+              setTimeout(() => {
+                const stats = calculateStatistics(db[mode]!, mode);
+                const generated = generateGames(numGames, numDezenas, mode, [], [], stats);
+                setResults(generated);
+              }, 50);
+            } else {
+              setStep('params');
+            }
             return;
           }
           if (Object.values(StrategyType).includes(item as StrategyType)) {
@@ -80,28 +87,11 @@ const GeneratorFlow: React.FC<GeneratorFlowProps> = ({ onBack, db }) => {
             setSelectedFilters(f => [...f, item as FilterType]);
           }
         } else {
-          // Remove
           const item = list[listIdx];
           if (Object.values(StrategyType).includes(item as StrategyType)) {
-            setSelectedStrats(s => {
-                const idx = s.indexOf(item as StrategyType);
-                if (idx > -1) {
-                    const copy = [...s];
-                    copy.splice(idx, 1);
-                    return copy;
-                }
-                return s;
-            });
+            setSelectedStrats(s => s.filter(x => x !== item));
           } else {
-            setSelectedFilters(f => {
-                const idx = f.indexOf(item as FilterType);
-                if (idx > -1) {
-                    const copy = [...f];
-                    copy.splice(idx, 1);
-                    return copy;
-                }
-                return f;
-            });
+            setSelectedFilters(f => f.filter(x => x !== item));
           }
         }
       }
@@ -116,13 +106,6 @@ const GeneratorFlow: React.FC<GeneratorFlowProps> = ({ onBack, db }) => {
     setNumDezenas(rules.minDezenas);
     setStep('config');
   };
-
-  const handleRunGenerator = useCallback(() => {
-    const stats = calculateStatistics(db[mode]!, mode);
-    // Ensure we use the latest configs
-    const generated = generateGames(numGames, numDezenas, mode, stratConfigs, filterConfigs, stats);
-    setResults(generated);
-  }, [numGames, numDezenas, mode, stratConfigs, filterConfigs, db]);
 
   const nextParam = () => {
     const allItems = [...selectedStrats, ...selectedFilters];
@@ -144,7 +127,6 @@ const GeneratorFlow: React.FC<GeneratorFlowProps> = ({ onBack, db }) => {
       setCurrentParamIdx(currentParamIdx + 1);
     } else {
       setStep('results');
-      // Delaying execution to ensure state is committed
       setTimeout(() => {
         const stats = calculateStatistics(db[mode]!, mode);
         const generated = generateGames(numGames, numDezenas, mode, updatedStrats, updatedFilters, stats);
@@ -228,7 +210,6 @@ const GeneratorFlow: React.FC<GeneratorFlowProps> = ({ onBack, db }) => {
         </div>
 
         <div className="flex-1 flex flex-col md:flex-row gap-4 overflow-hidden">
-          {/* Left Panel */}
           <div className={`flex-1 flex flex-col border-2 p-2 md:p-4 transition-all overflow-hidden ${activePanel === 'left' ? 'border-emerald-500 bg-emerald-500/5' : 'border-zinc-800 opacity-60'}`}>
             <h3 className="text-xs font-bold mb-2 uppercase text-zinc-400">Disponíveis</h3>
             <div className="flex-1 space-y-1 overflow-auto">
@@ -244,7 +225,6 @@ const GeneratorFlow: React.FC<GeneratorFlowProps> = ({ onBack, db }) => {
             </div>
           </div>
 
-          {/* Right Panel */}
           <div className={`flex-1 flex flex-col border-2 p-2 md:p-4 transition-all overflow-hidden ${activePanel === 'right' ? 'border-emerald-500 bg-emerald-500/5' : 'border-zinc-800 opacity-60'}`}>
             <h3 className="text-xs font-bold mb-2 uppercase text-zinc-400">Selecionados</h3>
             <div className="flex-1 space-y-1 overflow-auto">
@@ -274,7 +254,6 @@ const GeneratorFlow: React.FC<GeneratorFlowProps> = ({ onBack, db }) => {
 
     return (
       <div className="max-w-2xl mx-auto py-4 md:py-10 space-y-6">
-        {/* Breadcrumbs for jumping back */}
         <div className="flex flex-wrap gap-2 text-[10px] md:text-xs">
           <button onClick={() => jumpToStep('config')} className="text-zinc-500 hover:text-white underline">CONFIGS</button>
           <span className="text-zinc-700">/</span>
@@ -302,14 +281,14 @@ const GeneratorFlow: React.FC<GeneratorFlowProps> = ({ onBack, db }) => {
           {currentItem === StrategyType.LATENESS && (
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="text-xs text-zinc-500">ATRASO MÍNIMO:</label>
-                <input type="number" className="w-full bg-zinc-900 border border-zinc-700 p-2 mt-1 outline-none focus:border-emerald-500" 
-                    onChange={e => setParamState({...paramState, min: parseInt(e.target.value)})} />
+                <label className="text-xs text-zinc-500">QTD DE NÚMEROS ATRASADOS:</label>
+                <input type="number" value={paramState.count || ''} className="w-full bg-zinc-900 border border-zinc-700 p-2 mt-1 outline-none focus:border-emerald-500" 
+                    onChange={e => setParamState({...paramState, count: parseInt(e.target.value) || 0})} placeholder="Ex: 2" />
               </div>
               <div>
-                <label className="text-xs text-zinc-500">ATRASO MÁXIMO:</label>
-                <input type="number" className="w-full bg-zinc-900 border border-zinc-700 p-2 mt-1 outline-none focus:border-emerald-500"
-                    onChange={e => setParamState({...paramState, max: parseInt(e.target.value)})} />
+                <label className="text-xs text-zinc-500">ATRASO MÍNIMO (JOGOS):</label>
+                <input type="number" value={paramState.minDelay || ''} className="w-full bg-zinc-900 border border-zinc-700 p-2 mt-1 outline-none focus:border-emerald-500"
+                    onChange={e => setParamState({...paramState, minDelay: parseInt(e.target.value) || 0})} placeholder="Ex: 10" />
               </div>
             </div>
           )}
@@ -318,13 +297,13 @@ const GeneratorFlow: React.FC<GeneratorFlowProps> = ({ onBack, db }) => {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="text-xs text-zinc-500">PARES:</label>
-                <input type="number" className="w-full bg-zinc-900 border border-zinc-700 p-2 mt-1"
-                    onChange={e => setParamState({...paramState, even: parseInt(e.target.value)})} />
+                <input type="number" value={paramState.even || ''} className="w-full bg-zinc-900 border border-zinc-700 p-2 mt-1"
+                    onChange={e => setParamState({...paramState, even: parseInt(e.target.value) || 0})} />
               </div>
               <div>
                 <label className="text-xs text-zinc-500">ÍMPARES:</label>
-                <input type="number" className="w-full bg-zinc-900 border border-zinc-700 p-2 mt-1"
-                    onChange={e => setParamState({...paramState, odd: parseInt(e.target.value)})} />
+                <input type="number" value={paramState.odd || ''} className="w-full bg-zinc-900 border border-zinc-700 p-2 mt-1"
+                    onChange={e => setParamState({...paramState, odd: parseInt(e.target.value) || 0})} />
               </div>
             </div>
           )}
@@ -333,13 +312,13 @@ const GeneratorFlow: React.FC<GeneratorFlowProps> = ({ onBack, db }) => {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="text-xs text-zinc-500">MÍN PRIMOS:</label>
-                <input type="number" className="w-full bg-zinc-900 border border-zinc-700 p-2 mt-1"
-                    onChange={e => setParamState({...paramState, min: parseInt(e.target.value)})} />
+                <input type="number" value={paramState.min || ''} className="w-full bg-zinc-900 border border-zinc-700 p-2 mt-1"
+                    onChange={e => setParamState({...paramState, min: parseInt(e.target.value) || 0})} />
               </div>
               <div>
                 <label className="text-xs text-zinc-500">MÁX PRIMOS:</label>
-                <input type="number" className="w-full bg-zinc-900 border border-zinc-700 p-2 mt-1"
-                    onChange={e => setParamState({...paramState, max: parseInt(e.target.value)})} />
+                <input type="number" value={paramState.max || ''} className="w-full bg-zinc-900 border border-zinc-700 p-2 mt-1"
+                    onChange={e => setParamState({...paramState, max: parseInt(e.target.value) || 0})} />
               </div>
             </div>
           )}
@@ -348,13 +327,13 @@ const GeneratorFlow: React.FC<GeneratorFlowProps> = ({ onBack, db }) => {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="text-xs text-zinc-500">SOMA MÍN:</label>
-                <input type="number" className="w-full bg-zinc-900 border border-zinc-700 p-2 mt-1"
-                    onChange={e => setParamState({...paramState, min: parseInt(e.target.value)})} />
+                <input type="number" value={paramState.min || ''} className="w-full bg-zinc-900 border border-zinc-700 p-2 mt-1"
+                    onChange={e => setParamState({...paramState, min: parseInt(e.target.value) || 0})} />
               </div>
               <div>
                 <label className="text-xs text-zinc-500">SOMA MÁX:</label>
-                <input type="number" className="w-full bg-zinc-900 border border-zinc-700 p-2 mt-1"
-                    onChange={e => setParamState({...paramState, max: parseInt(e.target.value)})} />
+                <input type="number" value={paramState.max || ''} className="w-full bg-zinc-900 border border-zinc-700 p-2 mt-1"
+                    onChange={e => setParamState({...paramState, max: parseInt(e.target.value) || 0})} />
               </div>
             </div>
           )}
@@ -365,13 +344,13 @@ const GeneratorFlow: React.FC<GeneratorFlowProps> = ({ onBack, db }) => {
                     <div key={q} className="flex gap-2 items-end">
                         <div className="flex-1">
                             <label className="text-[10px] text-zinc-500 uppercase">Q{q} MÍN</label>
-                            <input type="number" className="w-full bg-zinc-900 border border-zinc-700 p-1 md:p-2"
-                                onChange={e => setParamState({...paramState, [`q${q}Min`]: parseInt(e.target.value)})} />
+                            <input type="number" value={paramState[`q${q}Min`] || ''} className="w-full bg-zinc-900 border border-zinc-700 p-1 md:p-2"
+                                onChange={e => setParamState({...paramState, [`q${q}Min`]: parseInt(e.target.value) || 0})} />
                         </div>
                         <div className="flex-1">
                             <label className="text-[10px] text-zinc-500 uppercase">Q{q} MAX</label>
-                            <input type="number" className="w-full bg-zinc-900 border border-zinc-700 p-1 md:p-2"
-                                onChange={e => setParamState({...paramState, [`q${q}Max`]: parseInt(e.target.value)})} />
+                            <input type="number" value={paramState[`q${q}Max`] || ''} className="w-full bg-zinc-900 border border-zinc-700 p-1 md:p-2"
+                                onChange={e => setParamState({...paramState, [`q${q}Max`]: parseInt(e.target.value) || 0})} />
                         </div>
                     </div>
                 ))}
@@ -409,7 +388,7 @@ const GeneratorFlow: React.FC<GeneratorFlowProps> = ({ onBack, db }) => {
         <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4 overflow-auto pr-2 pb-8">
           {results.length === 0 ? (
             <div className="col-span-1 md:col-span-2 text-center py-20 bg-zinc-950 border border-dashed border-zinc-800 italic text-zinc-500">
-               Critérios muito restritos. Tente voltar e alterar os parâmetros.
+               Critérios muito restritos ou base insuficiente. Tente voltar e alterar os parâmetros.
             </div>
           ) : (
             results.map((game, idx) => (
