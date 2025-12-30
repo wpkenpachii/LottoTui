@@ -43,76 +43,65 @@ const App: React.FC = () => {
     setIsGeneratingReport(true);
     
     try {
-      // Use standard A4 dimensions for jsPDF
+      // Use standard A4 dimensions for jsPDF (210 x 297 mm)
       const doc = new jsPDF('p', 'mm', 'a4');
       const pageWidth = doc.internal.pageSize.getWidth();
       const pageHeight = doc.internal.pageSize.getHeight();
-      const margin = 15;
+      const margin = 10;
       const contentWidth = pageWidth - (margin * 2);
 
       // Section ID list defined in StatsView
       const sectionIds = [
-        { id: 'even-odd-section', title: 'Pares vs Ímpares' },
-        { id: 'primes-section', title: 'Números Primos' },
-        { id: 'sums-line-section', title: 'Evolução das Somas' },
-        { id: 'lateness-section', title: 'Ranking de Atraso' },
-        { id: 'quadrants-section', title: 'Médias por Quadrante' },
-        { id: 'sums-stats-section', title: 'Resumo de Somatória' }
+        { id: 'even-odd-section', title: 'Distribuição: Pares vs Ímpares' },
+        { id: 'primes-section', title: 'Distribuição: Números Primos' },
+        { id: 'sums-line-section', title: 'Tendência: Evolução das Somas' },
+        { id: 'lateness-section', title: 'Ranking: Números em Atraso' },
+        { id: 'quadrants-section', title: 'Desempenho: Médias por Quadrante' },
+        { id: 'sums-stats-section', title: 'Resumo: Métricas de Somatória' }
       ];
 
       // 1. Cover Page
       doc.setFillColor(9, 9, 11);
       doc.rect(0, 0, pageWidth, pageHeight, 'F');
       doc.setTextColor(16, 185, 129);
-      doc.setFontSize(28);
-      doc.text(`LOTTOTUI PRO REPORT`, margin, 50);
+      doc.setFontSize(26);
+      doc.text(`LOTTOTUI PRO REPORT`, margin + 5, 50);
       doc.setFontSize(14);
       doc.setTextColor(150, 150, 150);
-      doc.text(`MODALIDADE: ${activeMode}`, margin, 65);
-      doc.text(`ÚLTIMA ATUALIZAÇÃO: ${stats.lastUpdate}`, margin, 75);
-      doc.text(`TOTAL DE SORTEIOS ANALISADOS: ${stats.count}`, margin, 85);
-      doc.line(margin, 95, pageWidth - margin, 95);
+      doc.text(`MODALIDADE: ${activeMode}`, margin + 5, 65);
+      doc.text(`DATA BASE: ${stats.lastUpdate}`, margin + 5, 75);
+      doc.text(`SORTEIOS ANALISADOS: ${stats.count}`, margin + 5, 85);
+      doc.setDrawColor(16, 185, 129);
+      doc.line(margin + 5, 95, pageWidth - margin - 5, 95);
+      doc.setFontSize(10);
+      doc.text("Gerado por Inteligência Artificial Gemini", margin + 5, pageHeight - 15);
 
-      // 2. Loop through sections
+      // 2. Loop through sections and capture each
       for (const section of sectionIds) {
         const element = document.getElementById(section.id);
-        if (!element) {
-          console.warn(`Section ${section.id} not found in DOM`);
-          continue;
-        }
+        if (!element) continue;
 
         doc.addPage();
         doc.setFillColor(9, 9, 11);
         doc.rect(0, 0, pageWidth, pageHeight, 'F');
         
         doc.setTextColor(16, 185, 129);
-        doc.setFontSize(16);
-        doc.text(section.title.toUpperCase(), margin, 20);
+        doc.setFontSize(14);
+        doc.text(section.title.toUpperCase(), margin, 15);
 
-        try {
-          const canvas = await html2canvas(element, {
-            backgroundColor: '#09090b',
-            scale: 1.5, // Slightly lower scale for stability
-            useCORS: true,
-            allowTaint: true,
-            logging: false
-          });
+        // Capture with html2canvas - scale 1 to avoid memory crashes on some devices
+        const canvas = await html2canvas(element, {
+          backgroundColor: '#09090b',
+          scale: 1,
+          useCORS: true,
+          logging: false
+        });
 
-          const imgData = canvas.toDataURL('image/png');
-          const imgHeight = (canvas.height * contentWidth) / canvas.width;
-          
-          // Center vertically if it fits, else start at top
-          let startY = 30;
-          if (imgHeight < pageHeight - 60) {
-            startY = (pageHeight - imgHeight) / 2;
-          }
-
-          doc.addImage(imgData, 'PNG', margin, startY, contentWidth, imgHeight);
-        } catch (canvasErr) {
-          console.error(`Error capturing ${section.id}:`, canvasErr);
-          doc.setTextColor(255, 0, 0);
-          doc.text(`Erro ao capturar gráfico: ${section.title}`, margin, 40);
-        }
+        const imgData = canvas.toDataURL('image/png');
+        const imgHeight = (canvas.height * contentWidth) / canvas.width;
+        
+        // Add image to PDF
+        doc.addImage(imgData, 'PNG', margin, 25, contentWidth, imgHeight);
       }
 
       // 3. AI Analysis Page
@@ -123,34 +112,33 @@ const App: React.FC = () => {
         doc.setFillColor(9, 9, 11);
         doc.rect(0, 0, pageWidth, pageHeight, 'F');
         doc.setTextColor(16, 185, 129);
-        doc.setFontSize(18);
-        doc.text("ANÁLISE ESTRATÉGICA IA", margin, 20);
+        doc.setFontSize(16);
+        doc.text("ANÁLISE ESTRATÉGICA IA (GEMINI)", margin, 15);
         
-        doc.setFontSize(10);
+        doc.setFontSize(9);
         doc.setTextColor(200, 200, 200);
         const splitText = doc.splitTextToSize(aiText, contentWidth);
         
-        let cursorY = 35;
+        let cursorY = 25;
         for (const line of splitText) {
-          if (cursorY > pageHeight - margin) {
+          if (cursorY > pageHeight - 15) {
             doc.addPage();
             doc.setFillColor(9, 9, 11);
             doc.rect(0, 0, pageWidth, pageHeight, 'F');
-            cursorY = margin;
+            cursorY = 15;
           }
           doc.text(line, margin, cursorY);
-          cursorY += 5;
+          cursorY += 4.5;
         }
       } catch (aiErr) {
-        console.error("AI Analysis PDF step failed:", aiErr);
+        console.error("AI Analysis step failed", aiErr);
       }
 
-      // 4. Save
-      doc.save(`LottoTUI_Report_${activeMode}_${Date.now()}.pdf`);
+      doc.save(`Relatorio_LottoTUI_${activeMode}_${Date.now()}.pdf`);
       
     } catch (e) {
-      console.error("General PDF Error:", e);
-      alert("Houve um problema ao gerar o PDF. Verifique se os gráficos estão visíveis na tela.");
+      console.error("PDF Export Error:", e);
+      alert("Falha ao gerar o PDF. Certifique-se de que a aba de estatísticas está aberta.");
     } finally {
       setIsGeneratingReport(false);
     }
@@ -199,8 +187,8 @@ const App: React.FC = () => {
         </div>
 
         <div className="bg-zinc-950 px-4 py-2 border-t border-zinc-800 flex justify-between text-[10px] md:text-xs opacity-60">
-          <div>LOTTOTUI PRO v1.1.2</div>
-          <div className="hidden md:block">STATUS: ONLINE _</div>
+          <div>LOTTOTUI PRO v1.1.5</div>
+          <div className="hidden md:block">ESTADO: PRONTO _</div>
         </div>
       </div>
     </div>

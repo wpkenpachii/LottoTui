@@ -20,7 +20,7 @@ export function calculateStatistics(draws: Draw[], mode: GameMode): Statistics {
   // Initialize lateness
   rules.range.forEach(n => stats.lateness[n] = 0);
 
-  draws.forEach((draw, index) => {
+  draws.forEach((draw) => {
     const sorted = [...draw.dezenas].sort((a, b) => a - b);
     
     // Even/Odd
@@ -73,16 +73,49 @@ export function generateGames(
   const games: number[][] = [];
   const rules = GAME_RULES[mode];
   let attempts = 0;
-  const maxAttempts = 100000; // Increased attempts for stricter filters
+  const maxAttempts = 200000; // High budget for simulation
+
+  // Optimization: If LATENESS is defined, we can split the candidate generation to be much faster
+  const latenessStrat = strategies.find(s => s.type === StrategyType.LATENESS);
+  const latePool: number[] = [];
+  const normalPool: number[] = [];
+
+  if (latenessStrat) {
+    const { minDelay } = latenessStrat.params;
+    rules.range.forEach(n => {
+      if (stats.lateness[n] >= minDelay) latePool.push(n);
+      else normalPool.push(n);
+    });
+  }
 
   while (games.length < count && attempts < maxAttempts) {
     attempts++;
-    // Generate random game
-    const current = new Set<number>();
-    while (current.size < numDezenas) {
-      current.add(rules.range[Math.floor(Math.random() * rules.range.length)]);
+    let game: number[];
+
+    if (latenessStrat && latePool.length >= latenessStrat.params.count) {
+      // Pick specifically K late numbers and the rest from normal
+      const current = new Set<number>();
+      const k = latenessStrat.params.count;
+      
+      // Select K from late
+      while (current.size < k) {
+        current.add(latePool[Math.floor(Math.random() * latePool.length)]);
+      }
+      // Select the rest from anywhere else (to satisfy "rest generated from others")
+      // but to ensure exactly K late, we must select from normalPool
+      const remaining = numDezenas - k;
+      while (current.size < numDezenas) {
+        current.add(rules.range[Math.floor(Math.random() * rules.range.length)]);
+      }
+      game = Array.from(current).sort((a, b) => a - b);
+    } else {
+      // Standard random generation
+      const current = new Set<number>();
+      while (current.size < numDezenas) {
+        current.add(rules.range[Math.floor(Math.random() * rules.range.length)]);
+      }
+      game = Array.from(current).sort((a, b) => a - b);
     }
-    const game = Array.from(current).sort((a, b) => a - b);
 
     // Apply Strategies
     let isValid = true;
@@ -92,7 +125,6 @@ export function generateGames(
         break;
       }
     }
-
     if (!isValid) continue;
 
     // Apply Filters
@@ -114,24 +146,24 @@ export function generateGames(
 function isValidStrategy(game: number[], strat: StrategyConfig, stats: Statistics): boolean {
   switch (strat.type) {
     case StrategyType.LATENESS:
-      // Updated logic: Check if game has exactly X numbers with delay >= minDelay
       const { minDelay, count } = strat.params;
       const lateNumbersInGame = game.filter(n => stats.lateness[n] >= minDelay).length;
       return lateNumbersInGame === count;
       
     case StrategyType.EVEN_ODD:
       const even = game.filter(n => n % 2 === 0).length;
-      return even === strat.params.even && (game.length - even) === strat.params.odd;
+      return even === (strat.params.even || 0) && (game.length - even) === (strat.params.odd || 0);
       
     case StrategyType.PRIMES:
       const pCount = game.filter(n => PRIMES.includes(n)).length;
-      return pCount >= strat.params.min && pCount <= strat.params.max;
+      return pCount >= (strat.params.min || 0) && pCount <= (strat.params.max || game.length);
       
     case StrategyType.MULTIPLES:
       for (const mStr in strat.params) {
           const m = parseInt(mStr);
+          const expected = strat.params[m];
           const count = game.filter(n => n % m === 0).length;
-          if (count !== strat.params[m]) return false;
+          if (count !== expected) return false;
       }
       return true;
       
@@ -145,7 +177,7 @@ function isValidFilter(game: number[], filter: FilterConfig, mode: GameMode): bo
   switch (filter.type) {
     case FilterType.SUM_TOTAL:
       const sum = game.reduce((a, b) => a + b, 0);
-      return sum >= filter.params.min && sum <= filter.params.max;
+      return sum >= (filter.params.min || 0) && sum <= (filter.params.max || (rules.maxNumber * game.length));
     case FilterType.QUADRANTS:
       const qCount = [0, 0, 0, 0];
       const qSize = rules.maxNumber / 4;
@@ -158,7 +190,10 @@ function isValidFilter(game: number[], filter: FilterConfig, mode: GameMode): bo
       return qCount.every((c, i) => {
         const min = filter.params[`q${i+1}Min`];
         const max = filter.params[`q${i+1}Max`];
-        return (isNaN(min) || c >= min) && (isNaN(max) || c <= max);
+        // If undefined or NaN, it shouldn't block
+        const passesMin = (min === undefined || isNaN(min)) ? true : c >= min;
+        const passesMax = (max === undefined || isNaN(max) || max === 0) ? true : c <= max;
+        return passesMin && passesMax;
       });
     default:
       return true;
