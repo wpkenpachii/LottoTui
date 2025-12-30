@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { GameMode, Draw, StrategyType, FilterType, StrategyConfig, FilterConfig } from '../types';
-import { GAME_RULES } from '../constants';
+import { GameMode, Draw, StrategyType, FilterType, StrategyConfig, FilterConfig, Statistics } from '../types';
+import { GAME_RULES, PRIMES } from '../constants';
 import { calculateStatistics, generateGames } from '../services/lottoLogic';
 
 interface GeneratorFlowProps {
@@ -33,12 +33,12 @@ const GeneratorFlow: React.FC<GeneratorFlowProps> = ({ onBack, db }) => {
   const [paramState, setParamState] = useState<any>({});
   
   const [results, setResults] = useState<number[][]>([]);
+  const [currentStats, setCurrentStats] = useState<Statistics | null>(null);
 
   const jumpToStep = (targetStep: 'config' | 'selection' | 'params', idx?: number) => {
     if (targetStep === 'params' && idx !== undefined) {
       setCurrentParamIdx(idx);
       setParamState({});
-      const allItems = [...selectedStrats, ...selectedFilters];
       setStratConfigs(prev => prev.slice(0, idx));
       setFilterConfigs(prev => prev.slice(0, Math.max(0, idx - selectedStrats.length)));
     } else {
@@ -73,6 +73,7 @@ const GeneratorFlow: React.FC<GeneratorFlowProps> = ({ onBack, db }) => {
               setStep('results');
               setTimeout(() => {
                 const stats = calculateStatistics(db[mode]!, mode);
+                setCurrentStats(stats);
                 const generated = generateGames(numGames, numDezenas, mode, [], [], stats);
                 setResults(generated);
               }, 50);
@@ -99,7 +100,7 @@ const GeneratorFlow: React.FC<GeneratorFlowProps> = ({ onBack, db }) => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [step, activePanel, listIdx, selectedStrats, selectedFilters]);
+  }, [step, activePanel, listIdx, selectedStrats, selectedFilters, db, mode, numGames, numDezenas]);
 
   const handleStart = () => {
     const rules = GAME_RULES[mode];
@@ -129,10 +130,45 @@ const GeneratorFlow: React.FC<GeneratorFlowProps> = ({ onBack, db }) => {
       setStep('results');
       setTimeout(() => {
         const stats = calculateStatistics(db[mode]!, mode);
+        setCurrentStats(stats);
         const generated = generateGames(numGames, numDezenas, mode, updatedStrats, updatedFilters, stats);
         setResults(generated);
       }, 50);
     }
+  };
+
+  const getAttribution = (num: number) => {
+    if (!currentStats) return [];
+    const attr = [];
+    
+    // Check Lateness
+    const lateConfig = stratConfigs.find(s => s.type === StrategyType.LATENESS);
+    if (lateConfig && currentStats.lateness[num] >= lateConfig.params.minDelay) {
+      attr.push({ label: 'A', color: 'text-red-500', title: 'Atrasado' });
+    }
+
+    // Check Prime
+    if (PRIMES.includes(num)) {
+      attr.push({ label: 'P', color: 'text-blue-500', title: 'Primo' });
+    }
+
+    // Check Multiples
+    const multiConfig = stratConfigs.find(s => s.type === StrategyType.MULTIPLES);
+    if (multiConfig) {
+      const activeMultiples = Object.keys(multiConfig.params).map(Number);
+      if (activeMultiples.some(m => num % m === 0)) {
+        attr.push({ label: 'M', color: 'text-yellow-500', title: 'Múltiplo' });
+      }
+    }
+
+    // Parity
+    if (num % 2 === 0) {
+      attr.push({ label: 'p', color: 'text-zinc-500', title: 'Par' });
+    } else {
+      attr.push({ label: 'i', color: 'text-zinc-500', title: 'Ímpar' });
+    }
+
+    return attr;
   };
 
   if (step === 'mode') {
@@ -367,56 +403,87 @@ const GeneratorFlow: React.FC<GeneratorFlowProps> = ({ onBack, db }) => {
 
   if (step === 'results') {
     return (
-      <div className="space-y-4 md:space-y-6 h-full flex flex-col">
+      <div className="space-y-4 md:space-y-6 h-full flex flex-col overflow-hidden">
         <div className="flex flex-col md:flex-row justify-between md:items-center border-b border-zinc-800 pb-4 gap-4">
           <h2 className="text-xl md:text-2xl font-bold text-emerald-500">JOGOS GERADOS</h2>
           <div className="flex gap-2">
             <button 
                 onClick={() => {
                     const stats = calculateStatistics(db[mode]!, mode);
+                    setCurrentStats(stats);
                     const generated = generateGames(numGames, numDezenas, mode, stratConfigs, filterConfigs, stats);
                     setResults(generated);
                 }} 
-                className="bg-emerald-500/20 text-emerald-500 border border-emerald-500/50 px-4 py-2 text-xs font-bold hover:bg-emerald-500/30 active:scale-95"
+                className="bg-emerald-500/20 text-emerald-500 border border-emerald-500/50 px-4 py-2 text-xs font-bold hover:bg-emerald-500/30 active:scale-95 transition-all"
             >
                 RE-GERAR
             </button>
-            <button onClick={onBack} className="bg-zinc-800 text-white px-4 py-2 border border-zinc-700 text-xs">MENU</button>
+            <button onClick={onBack} className="bg-zinc-800 text-white px-4 py-2 border border-zinc-700 text-xs hover:bg-zinc-700 transition-all">MENU</button>
           </div>
         </div>
 
-        <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4 overflow-auto pr-2 pb-8">
+        <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4 overflow-auto pr-2 pb-4">
           {results.length === 0 ? (
             <div className="col-span-1 md:col-span-2 text-center py-20 bg-zinc-950 border border-dashed border-zinc-800 italic text-zinc-500">
                Critérios muito restritos ou base insuficiente. Tente voltar e alterar os parâmetros.
             </div>
           ) : (
             results.map((game, idx) => (
-              <div key={idx} className="bg-zinc-950 border border-zinc-800 p-4 md:p-6 flex items-center justify-between group hover:border-emerald-500 transition-colors">
-                <div className="flex flex-wrap gap-2">
-                  {game.map(num => (
-                    <span key={num} className="w-8 h-8 md:w-10 md:h-10 flex items-center justify-center rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-500 font-bold text-sm md:text-base">
-                      {num.toString().padStart(2, '0')}
-                    </span>
-                  ))}
+              <div key={idx} className="bg-zinc-950 border border-zinc-800 p-4 md:p-6 flex flex-col space-y-4 group hover:border-emerald-500 transition-colors">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-zinc-600 font-mono tracking-widest uppercase">JOGO #{(idx + 1).toString().padStart(2, '0')}</span>
+                  <div className="flex space-x-1">
+                    <div className="w-1 h-1 bg-emerald-500/20"></div>
+                    <div className="w-1 h-1 bg-emerald-500/40"></div>
+                    <div className="w-1 h-1 bg-emerald-500/60"></div>
+                  </div>
                 </div>
-                <div className="text-[10px] text-zinc-700 font-mono tracking-tighter hidden md:block">
-                  #{(idx + 1).toString().padStart(2, '0')}
+                
+                <div className="flex flex-wrap gap-x-4 gap-y-6">
+                  {game.map(num => {
+                    const attrs = getAttribution(num);
+                    return (
+                      <div key={num} className="flex flex-col items-center space-y-1 relative">
+                        <span className="w-10 h-10 md:w-12 md:h-12 flex items-center justify-center rounded-sm bg-emerald-500/5 border border-emerald-500/20 text-emerald-500 font-bold text-base md:text-lg group-hover:bg-emerald-500/10 transition-colors">
+                          {num.toString().padStart(2, '0')}
+                        </span>
+                        <div className="flex space-x-0.5">
+                          {attrs.map((at, i) => (
+                            <span key={i} className={`text-[8px] font-bold ${at.color}`} title={at.title}>{at.label}</span>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             ))
           )}
         </div>
 
-        <div className="p-3 bg-emerald-500/5 border border-emerald-500/20 rounded-t shrink-0">
-            <div className="flex justify-between items-center mb-1">
-                <h4 className="text-[10px] font-bold text-emerald-500 uppercase">Filtros:</h4>
-                <button onClick={() => jumpToStep('selection')} className="text-[9px] text-zinc-500 underline uppercase">Editar Filtros</button>
+        <div className="p-3 bg-zinc-950 border border-zinc-800 rounded-sm shrink-0">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+              <span className="text-[10px] font-bold text-zinc-500 uppercase">Legenda:</span>
+              <div className="flex items-center space-x-1">
+                <span className="text-[10px] font-bold text-red-500">A</span>
+                <span className="text-[9px] text-zinc-400">ATRASADO</span>
+              </div>
+              <div className="flex items-center space-x-1">
+                <span className="text-[10px] font-bold text-blue-500">P</span>
+                <span className="text-[9px] text-zinc-400">PRIMO</span>
+              </div>
+              <div className="flex items-center space-x-1">
+                <span className="text-[10px] font-bold text-yellow-500">M</span>
+                <span className="text-[9px] text-zinc-400">MÚLTIPLO</span>
+              </div>
+              <div className="flex items-center space-x-1">
+                <span className="text-[10px] font-bold text-zinc-500">p/i</span>
+                <span className="text-[9px] text-zinc-400">PAR/ÍMPAR</span>
+              </div>
             </div>
-            <div className="flex flex-wrap gap-x-4 gap-y-1">
-                {stratConfigs.map((s, i) => <span key={i} className="text-[9px] text-zinc-400">→ {s.type}</span>)}
-                {filterConfigs.map((f, i) => <span key={i} className="text-[9px] text-zinc-400">→ {f.type}</span>)}
-            </div>
+            <button onClick={() => jumpToStep('selection')} className="text-[9px] text-zinc-500 hover:text-emerald-500 underline uppercase transition-colors">Editar Filtros/Estratégias</button>
+          </div>
         </div>
       </div>
     );
