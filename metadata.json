@@ -1,0 +1,18 @@
+{
+  "name": "LottoTUI Pro",
+  "short_name": "LottoTUI",
+  "description": "Terminal Interativo para Análise e Geração de Loterias",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#09090b",
+  "theme_color": "#10b981",
+  "requestFramePermissions": [],
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/3135/3135715.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
